@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/go-redis/redis/v8"
 )
@@ -25,6 +27,7 @@ func main() {
 	l := Listener{rdb: rdb}
 
 	http.HandleFunc("/visits", l.HandleVisits)
+	http.HandleFunc("/visits-count", l.HandleGetVisits)
 
 	log.Printf("Info: starting to serve on addr %s\n", laddr)
 	log.Fatal(http.ListenAndServe(laddr, nil))
@@ -43,6 +46,35 @@ func (l *Listener) HandleVisits(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	return
+}
+
+func (l *Listener) HandleGetVisits(w http.ResponseWriter, r *http.Request) {
+	rawVal, err := l.rdb.Get(ctx, visitsKey).Result()
+	if err != nil {
+		log.Printf("Error: %v\n", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	val, err := strconv.Atoi(rawVal)
+	if err != nil {
+		log.Printf("Error: %v\n", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	resp := make(map[string]int)
+	resp["value"] = val
+	jsonResp, err := json.Marshal(resp)
+	if err != nil {
+		log.Printf("Error: during json marshal. err: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+
+	w.Write(jsonResp)
 }
 
 func (l *Listener) setOrIncrementCounter(key string) error {
